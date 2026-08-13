@@ -51,7 +51,7 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           provenance: mode=max
           sbom: true
-      - uses: actions/attest-build-provenance@v3
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/o/adguardhome-exporter
           subject-digest: ${{ steps.image.outputs.digest }}
