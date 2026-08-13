@@ -1,0 +1,48 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "AdGuard Home up",
+      "targets": [{"expr": "adguardhome_up{instance=~\"$instance\"}"}],
+      "fieldConfig": {"defaults": {"noValue": "0"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "DNS queries in current AdGuard window",
+      "targets": [{"expr": "adguardhome_dns_queries{instance=~\"$instance\"}", "legendFormat": "{{instance}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Blocked DNS queries in current AdGuard window",
+      "targets": [{"expr": "adguardhome_dns_queries_blocked{instance=~\"$instance\"}", "legendFormat": "{{instance}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Average processing time",
+      "targets": [{"expr": "adguardhome_dns_query_processing_duration_seconds{instance=~\"$instance\"}", "legendFormat": "{{instance}}"}]
+    },
+    {
+      "type": "table",
+      "title": "Upstream response time",
+      "targets": [{"expr": "adguardhome_upstream_response_duration_seconds{instance=~\"$instance\"}", "format": "table", "instant": true}]
+    }
+  ],
+  "schemaVersion": 41,
+  "templating": {
+    "list": [{
+      "name": "instance",
+      "label": "Instance",
+      "type": "query",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "definition": "label_values(adguardhome_up, instance)",
+      "query": {"query": "label_values(adguardhome_up, instance)", "refId": "instance"},
+      "includeAll": true,
+      "multi": true,
+      "allValue": ".*"
+    }]
+  },
+  "title": "AdGuard Home Exporter",
+  "uid": "adguardhome-exporter"
+}
