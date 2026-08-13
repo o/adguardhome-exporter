@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag to release
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,9 +24,13 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Resolve release source
+        id: source
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Validate release tag
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           if [[ ! "$TAG" =~ ^v[0-9]+.[0-9]+.[0-9]+$ ]]; then
             echo "Release tags must use vMAJOR.MINOR.PATCH."
@@ -56,11 +66,14 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
+            VERSION=${{ inputs.tag || github.ref_name }}
+            REVISION=${{ steps.source.outputs.revision }}
           provenance: mode=max
           sbom: true
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        if: github.event.repository.private == false
         with:
           subject-name: ghcr.io/o/adguardhome-exporter
           subject-digest: ${{ steps.image.outputs.digest }}
@@ -74,5 +87,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        if: github.event.repository.private == false
         with:
           subject-path: dist/checksums.txt
