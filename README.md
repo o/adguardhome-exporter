@@ -16,12 +16,16 @@ device information.
 
 ### Running with Docker Compose
 
-Copy and edit `compose.yaml`. Create the password file next to it:
+Download the Compose file:
+
+    curl -fsSLO https://raw.githubusercontent.com/o/adguardhome-exporter/main/compose.yaml
+
+Create the password file next to it:
 
     printf '%s\n' 'password' > adguard_password.txt
 
-Update `ADGUARD_TARGET_1_URL` and `ADGUARD_TARGET_1_USERNAME` in
-`compose.yaml`, then run:
+Update `ADGUARD_TARGET_1_URL` and `ADGUARD_TARGET_1_USERNAME` in the
+downloaded `compose.yaml`, then run:
 
     docker compose up -d
 
