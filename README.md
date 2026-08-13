@@ -14,6 +14,24 @@ container.
 Top domains and clients are disabled by default. They can reveal browsing and
 device information.
 
+### Running with Docker Compose
+
+Copy and edit `compose.yaml`. Create the password file next to it:
+
+    printf '%s\n' 'password' > adguard_password.txt
+
+Update `ADGUARD_TARGET_1_URL` and `ADGUARD_TARGET_1_USERNAME` in
+`compose.yaml`, then run:
+
+    docker compose up -d
+
+Check it:
+
+    curl http://127.0.0.1:9618/metrics
+
+The Compose file uses Docker secrets, a read-only filesystem, no Linux
+capabilities, and a health check.
+
 ### Running with Docker
 
 Create a config file:
@@ -33,10 +51,6 @@ Run the exporter:
       ghcr.io/o/adguardhome-exporter:latest --config.file=/config.yaml
 
 Prometheus should scrape `http://exporter:9618/metrics`.
-
-The included [compose.yaml](compose.yaml) has a Docker Compose example with
-Docker secrets, a read-only filesystem, no Linux capabilities, and a health
-check.
 
 ### Configuration
 
