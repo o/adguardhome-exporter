@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/o/adguardhome-exporter/internal/config"
@@ -71,6 +72,26 @@ type DHCPStatus struct {
 	StaticLeases []interface{} `json:"static_leases"`
 }
 
+// Collection contains one read-only response from each API endpoint.
+// A failed endpoint leaves its response at the zero value and records an error.
+type Collection struct {
+	Status                Status
+	StatusError           error
+	Statistics            Statistics
+	StatisticsError       error
+	StatisticsConfig      StatisticsConfig
+	StatisticsConfigError error
+	FilterStatus          FilterStatus
+	FilterError           error
+	DHCPStatus            DHCPStatus
+	DHCPError             error
+}
+
+type CollectorResult struct {
+	Name string
+	Err  error
+}
+
 func NewClient(target config.Target, timeout time.Duration) (*Client, error) {
 	tlsConfig, err := config.TLSConfig(target)
 	if err != nil {
@@ -119,6 +140,49 @@ func (client *Client) DHCPStatus(ctx context.Context) (DHCPStatus, error) {
 	var result DHCPStatus
 	err := client.get(ctx, "/control/dhcp/status", &result)
 	return result, err
+}
+
+// Collect gets all independent endpoints concurrently.  Every request shares
+// the caller's context, so the target timeout applies to the whole collection.
+func (client *Client) Collect(ctx context.Context) Collection {
+	var collection Collection
+	var waitGroup sync.WaitGroup
+
+	waitGroup.Add(5)
+	go func() {
+		defer waitGroup.Done()
+		collection.Status, collection.StatusError = client.Status(ctx)
+	}()
+	go func() {
+		defer waitGroup.Done()
+		collection.Statistics, collection.StatisticsError = client.Statistics(ctx)
+	}()
+	go func() {
+		defer waitGroup.Done()
+		collection.StatisticsConfig, collection.StatisticsConfigError = client.StatisticsConfig(ctx)
+	}()
+	go func() {
+		defer waitGroup.Done()
+		collection.FilterStatus, collection.FilterError = client.FilterStatus(ctx)
+	}()
+	go func() {
+		defer waitGroup.Done()
+		collection.DHCPStatus, collection.DHCPError = client.DHCPStatus(ctx)
+	}()
+
+	waitGroup.Wait()
+
+	return collection
+}
+
+func (collection Collection) Results() []CollectorResult {
+	return []CollectorResult{
+		{Name: "status", Err: collection.StatusError},
+		{Name: "statistics", Err: collection.StatisticsError},
+		{Name: "statistics_config", Err: collection.StatisticsConfigError},
+		{Name: "filtering", Err: collection.FilterError},
+		{Name: "dhcp", Err: collection.DHCPError},
+	}
 }
 
 func (client *Client) get(ctx context.Context, path string, destination interface{}) error {

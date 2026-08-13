@@ -1,0 +1,16 @@
+.git
+.github
+.goreleaser.yaml
+.gitignore
+.dockerignore
+bin
+dist
+coverage.out
+*.local.yaml
+*.secret
+*.pem
+*.key
+.env
+adguard_password.txt
+config.yaml
+

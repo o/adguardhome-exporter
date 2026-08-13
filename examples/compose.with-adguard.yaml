@@ -1,0 +1,44 @@
+services:
+  adguardhome:
+    image: adguard/adguardhome:v0.107.78
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "53:53/tcp"
+      - "53:53/udp"
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+
+  adguardhome-exporter:
+    image: ghcr.io/o/adguardhome-exporter:latest
+    restart: unless-stopped
+    ports:
+      - "9618:9618"
+    environment:
+      ADGUARD_TARGET_1_NAME: home
+      ADGUARD_TARGET_1_URL: http://adguardhome:3000
+      ADGUARD_TARGET_1_USERNAME: admin
+      ADGUARD_TARGET_1_PASSWORD_FILE: /run/secrets/adguard_password
+    secrets:
+      - adguard_password
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/adguardhome-exporter", "healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  adguard_work:
+  adguard_conf:
+
+secrets:
+  adguard_password:
+    file: ./adguard_password.txt

@@ -24,16 +24,31 @@ Create the password file next to it:
 
     printf '%s\n' 'password' > adguard_password.txt
 
-Update `ADGUARD_TARGET_1_URL` and `ADGUARD_TARGET_1_USERNAME` in the
-downloaded `compose.yaml`, then run:
+This file expects an existing Docker network called `adguard_adguard`, which
+is the network name used by the AdGuard stack on this host. Set
+`ADGUARD_NETWORK` when your network has a different name:
 
-    docker compose up -d
+    ADGUARD_NETWORK=my-adguard-network docker compose up -d
 
-Check it:
+The target URL is `http://adguardhome:3000`. It works when the AdGuard
+container has the `adguardhome` service name on that network. Update
+`ADGUARD_TARGET_1_URL` and `ADGUARD_TARGET_1_USERNAME` when that is not
+your setup.
+
+For a new, self-contained AdGuard Home and exporter stack:
+
+    curl -fsSLO https://raw.githubusercontent.com/o/adguardhome-exporter/main/examples/compose.with-adguard.yaml
+    docker compose -f compose.with-adguard.yaml up -d
+
+Complete the AdGuard Home setup at `http://127.0.0.1:3000`, use
+`http://adguardhome:3000` as the exporter target URL, and set the same admin
+password in `adguard_password.txt`.
+
+Check either setup:
 
     curl http://127.0.0.1:9618/metrics
 
-The Compose file uses Docker secrets, a read-only filesystem, no Linux
+Both Compose files use Docker secrets, a read-only filesystem, no Linux
 capabilities, and a health check.
 
 ### Running with Docker

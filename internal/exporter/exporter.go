@@ -76,9 +76,9 @@ func New(cfg config.Config, logger *slog.Logger) (*Exporter, error) {
 }
 
 func (exporter *Exporter) Describe(channel chan<- *prometheus.Desc) {
-	channel <- exporter.descriptors.up
-	channel <- exporter.descriptors.scrapeDuration
-	channel <- exporter.descriptors.collectorSuccess
+	for _, descriptor := range exporter.descriptors.all() {
+		channel <- descriptor
+	}
 }
 
 func (exporter *Exporter) Collect(channel chan<- prometheus.Metric) {
@@ -98,54 +98,41 @@ func (exporter *Exporter) collectTarget(target targetClient, channel chan<- prom
 	ctx, cancel := context.WithTimeout(context.Background(), exporter.timeout)
 	defer cancel()
 
-	status, statusError := target.client.Status(ctx)
-	statistics, statisticsError := target.client.Statistics(ctx)
-	statisticsConfig, statisticsConfigError := target.client.StatisticsConfig(ctx)
-	filterStatus, filterError := target.client.FilterStatus(ctx)
-	dhcpStatus, dhcpError := target.client.DHCPStatus(ctx)
+	data := target.client.Collect(ctx)
 
-	collectorResults := map[string]error{
-		"status":            statusError,
-		"statistics":        statisticsError,
-		"statistics_config": statisticsConfigError,
-		"filtering":         filterError,
-		"dhcp":              dhcpError,
-	}
-	allSuccessful := true
-	for name, err := range collectorResults {
+	for _, result := range data.Results() {
 		success := 1.0
-		if err != nil {
+		if result.Err != nil {
 			success = 0
-			allSuccessful = false
-			exporter.logger.Warn("AdGuard Home request failed", "target", target.name, "collector", name, "error", err)
+			exporter.logger.Warn("AdGuard Home request failed", "target", target.name, "collector", result.Name, "error", result.Err)
 		}
-		emit(channel, exporter.descriptors.collectorSuccess, prometheus.GaugeValue, success, target.name, name)
+		emit(channel, exporter.descriptors.collectorSuccess, prometheus.GaugeValue, success, target.name, result.Name)
 	}
 
 	up := 0.0
-	if allSuccessful {
+	if data.StatusError == nil {
 		up = 1
 	}
 	emit(channel, exporter.descriptors.up, prometheus.GaugeValue, up, target.name)
 	emit(channel, exporter.descriptors.scrapeDuration, prometheus.GaugeValue, time.Since(started).Seconds(), target.name)
 
-	if statusError == nil {
-		emitStatus(channel, exporter.descriptors, target.name, status)
+	if data.StatusError == nil {
+		emitStatus(channel, exporter.descriptors, target.name, data.Status)
 	}
-	if statisticsError == nil {
-		emitStatistics(channel, exporter.descriptors, target.name, statistics, exporter.topEnabled, exporter.topLimit)
+	if data.StatisticsError == nil {
+		emitStatistics(channel, exporter.descriptors, target.name, data.Statistics, exporter.topEnabled, exporter.topLimit)
 	}
-	if statisticsConfigError == nil {
-		emit(channel, exporter.descriptors.statisticsEnabled, prometheus.GaugeValue, boolValue(statisticsConfig.Enabled), target.name)
-		emit(channel, exporter.descriptors.statisticsWindow, prometheus.GaugeValue, statisticsConfig.Interval/1000, target.name)
+	if data.StatisticsConfigError == nil {
+		emit(channel, exporter.descriptors.statisticsEnabled, prometheus.GaugeValue, boolValue(data.StatisticsConfig.Enabled), target.name)
+		emit(channel, exporter.descriptors.statisticsWindow, prometheus.GaugeValue, data.StatisticsConfig.Interval/1000, target.name)
 	}
-	if filterError == nil {
-		emitFiltering(channel, exporter.descriptors, target.name, filterStatus)
+	if data.FilterError == nil {
+		emitFiltering(channel, exporter.descriptors, target.name, data.FilterStatus)
 	}
-	if dhcpError == nil {
-		emit(channel, exporter.descriptors.dhcpEnabled, prometheus.GaugeValue, boolValue(dhcpStatus.Enabled), target.name)
-		emit(channel, exporter.descriptors.dhcpLeases, prometheus.GaugeValue, float64(len(dhcpStatus.Leases)), target.name, "dynamic")
-		emit(channel, exporter.descriptors.dhcpLeases, prometheus.GaugeValue, float64(len(dhcpStatus.StaticLeases)), target.name, "static")
+	if data.DHCPError == nil {
+		emit(channel, exporter.descriptors.dhcpEnabled, prometheus.GaugeValue, boolValue(data.DHCPStatus.Enabled), target.name)
+		emit(channel, exporter.descriptors.dhcpLeases, prometheus.GaugeValue, float64(len(data.DHCPStatus.Leases)), target.name, "dynamic")
+		emit(channel, exporter.descriptors.dhcpLeases, prometheus.GaugeValue, float64(len(data.DHCPStatus.StaticLeases)), target.name, "static")
 	}
 }
 
@@ -165,7 +152,7 @@ func emitStatistics(channel chan<- prometheus.Metric, d descriptors, name string
 	emit(channel, d.dnsReplaced, prometheus.GaugeValue, statistics.NumReplacedSafeSearch, name, "safe_search")
 	emit(channel, d.dnsReplaced, prometheus.GaugeValue, statistics.NumReplacedParental, name, "parental")
 	emit(channel, d.processingTime, prometheus.GaugeValue, statistics.AverageProcessingTime, name)
-	emitTopEntries(channel, d.upstreamResponses, name, statistics.TopUpstreamResponses, "upstream", 100, false)
+	emitTopEntries(channel, d.upstreamResponses, name, statistics.TopUpstreamResponses, "upstream", 100, true)
 	emitTopEntries(channel, d.upstreamTime, name, statistics.TopUpstreamAverageTime, "upstream", 100, true)
 	if !topEnabled {
 		return
@@ -244,5 +231,36 @@ func newDescriptors() descriptors {
 		statisticsEnabled: metric("statistics_enabled", "Whether AdGuard Home statistics are enabled.", "instance"), statisticsWindow: metric("statistics_retention_seconds", "AdGuard Home statistics retention window.", "instance"), dnsQueries: metric("dns_queries", "DNS queries in AdGuard Home's current statistics window.", "instance"), dnsBlocked: metric("dns_queries_blocked", "Blocked DNS queries in AdGuard Home's current statistics window.", "instance"), dnsReplaced: metric("dns_queries_replaced", "DNS queries replaced by a protection subsystem in the current statistics window.", "instance", "reason"), processingTime: metric("dns_query_processing_duration_seconds", "Average DNS query processing time in the current statistics window.", "instance"),
 		upstreamResponses: metric("upstream_responses", "Responses from an upstream in the current statistics window.", "instance", "upstream"), upstreamTime: metric("upstream_response_duration_seconds", "Average response time from an upstream in the current statistics window.", "instance", "upstream"), filteringEnabled: metric("filtering_enabled", "Whether filtering is enabled.", "instance"), filterLists: metric("filter_lists", "Configured filter lists.", "instance", "type", "enabled"), filterRules: metric("filter_list_rules", "Rules in configured filter lists.", "instance", "type", "enabled"), userRules: metric("user_rules", "Configured user rules.", "instance"), dhcpEnabled: metric("dhcp_enabled", "Whether DHCP is enabled.", "instance"), dhcpLeases: metric("dhcp_leases", "DHCP leases.", "instance", "type"),
 		topDomains: metric("top_queried_domain_queries", "Queries for a top queried domain in the current statistics window.", "instance", "domain"), topBlockedDomains: metric("top_blocked_domain_queries", "Queries for a top blocked domain in the current statistics window.", "instance", "domain"), topClients: metric("top_client_queries", "Queries from a top client in the current statistics window.", "instance", "client"),
+	}
+}
+
+func (d descriptors) all() []*prometheus.Desc {
+	return []*prometheus.Desc{
+		d.up,
+		d.scrapeDuration,
+		d.collectorSuccess,
+		d.info,
+		d.running,
+		d.protectionEnabled,
+		d.protectionDisabled,
+		d.dhcpAvailable,
+		d.startTime,
+		d.statisticsEnabled,
+		d.statisticsWindow,
+		d.dnsQueries,
+		d.dnsBlocked,
+		d.dnsReplaced,
+		d.processingTime,
+		d.upstreamResponses,
+		d.upstreamTime,
+		d.filteringEnabled,
+		d.filterLists,
+		d.filterRules,
+		d.userRules,
+		d.dhcpEnabled,
+		d.dhcpLeases,
+		d.topDomains,
+		d.topBlockedDomains,
+		d.topClients,
 	}
 }
