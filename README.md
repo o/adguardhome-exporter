@@ -121,11 +121,17 @@ AdGuard Home returns statistics for its current retention window. Those values
 are gauges, not counters, and they may decrease when AdGuard rotates its
 statistics.
 
+The exporter also keeps query and blocked-query counters from the time it
+starts. Use these for rates in Prometheus and Grafana. They reset when the
+exporter restarts, as normal Prometheus counters do.
+
 Useful metrics:
 
     adguardhome_up
     adguardhome_dns_queries
     adguardhome_dns_queries_blocked
+    adguardhome_dns_queries_total
+    adguardhome_dns_queries_blocked_total
     adguardhome_dns_query_processing_duration_seconds
     adguardhome_upstream_response_duration_seconds
     adguardhome_filtering_enabled

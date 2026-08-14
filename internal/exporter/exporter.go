@@ -13,17 +13,30 @@ import (
 )
 
 type Exporter struct {
-	clients     []targetClient
-	topEnabled  bool
-	topLimit    int
-	timeout     time.Duration
-	logger      *slog.Logger
-	descriptors descriptors
+	clients          []targetClient
+	topEnabled       bool
+	topLimit         int
+	timeout          time.Duration
+	logger           *slog.Logger
+	descriptors      descriptors
+	statisticsMu     sync.Mutex
+	statisticsTotals map[string]statisticsTotals
 }
 
 type targetClient struct {
 	name   string
 	client *adguard.Client
+}
+
+// statisticsTotals turns AdGuard Home's windowed values into counters that
+// start when the exporter starts.  Prometheus can use these counters for rate
+// queries, while the original window values remain available as gauges.
+type statisticsTotals struct {
+	initialized     bool
+	previousQueries float64
+	previousBlocked float64
+	queriesTotal    float64
+	blockedTotal    float64
 }
 
 type descriptors struct {
@@ -40,6 +53,8 @@ type descriptors struct {
 	statisticsWindow   *prometheus.Desc
 	dnsQueries         *prometheus.Desc
 	dnsBlocked         *prometheus.Desc
+	dnsQueriesTotal    *prometheus.Desc
+	dnsBlockedTotal    *prometheus.Desc
 	dnsReplaced        *prometheus.Desc
 	processingTime     *prometheus.Desc
 	upstreamResponses  *prometheus.Desc
@@ -57,11 +72,12 @@ type descriptors struct {
 
 func New(cfg config.Config, logger *slog.Logger) (*Exporter, error) {
 	exporter := &Exporter{
-		topEnabled:  cfg.Collectors.TopEnabled,
-		topLimit:    cfg.Collectors.TopLimit,
-		timeout:     cfg.Web.Timeout,
-		logger:      logger,
-		descriptors: newDescriptors(),
+		topEnabled:       cfg.Collectors.TopEnabled,
+		topLimit:         cfg.Collectors.TopLimit,
+		timeout:          cfg.Web.Timeout,
+		logger:           logger,
+		descriptors:      newDescriptors(),
+		statisticsTotals: make(map[string]statisticsTotals),
 	}
 
 	for _, target := range cfg.Targets {
@@ -120,7 +136,8 @@ func (exporter *Exporter) collectTarget(target targetClient, channel chan<- prom
 		emitStatus(channel, exporter.descriptors, target.name, data.Status)
 	}
 	if data.StatisticsError == nil {
-		emitStatistics(channel, exporter.descriptors, target.name, data.Statistics, exporter.topEnabled, exporter.topLimit)
+		totals := exporter.updateStatisticsTotals(target.name, data.Statistics)
+		emitStatistics(channel, exporter.descriptors, target.name, data.Statistics, totals, exporter.topEnabled, exporter.topLimit)
 	}
 	if data.StatisticsConfigError == nil {
 		emit(channel, exporter.descriptors.statisticsEnabled, prometheus.GaugeValue, boolValue(data.StatisticsConfig.Enabled), target.name)
@@ -145,9 +162,43 @@ func emitStatus(channel chan<- prometheus.Metric, d descriptors, name string, st
 	emit(channel, d.startTime, prometheus.GaugeValue, status.StartTime/1000, name)
 }
 
-func emitStatistics(channel chan<- prometheus.Metric, d descriptors, name string, statistics adguard.Statistics, topEnabled bool, topLimit int) {
+func (exporter *Exporter) updateStatisticsTotals(name string, statistics adguard.Statistics) statisticsTotals {
+	exporter.statisticsMu.Lock()
+	defer exporter.statisticsMu.Unlock()
+
+	totals := exporter.statisticsTotals[name]
+	if !totals.initialized {
+		totals.initialized = true
+		totals.previousQueries = statistics.NumDNSQueries
+		totals.previousBlocked = statistics.NumBlockedFiltering
+		exporter.statisticsTotals[name] = totals
+		return totals
+	}
+
+	totals.queriesTotal += windowIncrease(statistics.NumDNSQueries, totals.previousQueries)
+	totals.blockedTotal += windowIncrease(statistics.NumBlockedFiltering, totals.previousBlocked)
+	totals.previousQueries = statistics.NumDNSQueries
+	totals.previousBlocked = statistics.NumBlockedFiltering
+	exporter.statisticsTotals[name] = totals
+
+	return totals
+}
+
+func windowIncrease(current, previous float64) float64 {
+	if current >= previous {
+		return current - previous
+	}
+
+	// AdGuard Home starts a new statistics window at zero.  The current value
+	// is the number of requests observed in that new window so far.
+	return current
+}
+
+func emitStatistics(channel chan<- prometheus.Metric, d descriptors, name string, statistics adguard.Statistics, totals statisticsTotals, topEnabled bool, topLimit int) {
 	emit(channel, d.dnsQueries, prometheus.GaugeValue, statistics.NumDNSQueries, name)
 	emit(channel, d.dnsBlocked, prometheus.GaugeValue, statistics.NumBlockedFiltering, name)
+	emit(channel, d.dnsQueriesTotal, prometheus.CounterValue, totals.queriesTotal, name)
+	emit(channel, d.dnsBlockedTotal, prometheus.CounterValue, totals.blockedTotal, name)
 	emit(channel, d.dnsReplaced, prometheus.GaugeValue, statistics.NumReplacedSafeBrowsing, name, "safe_browsing")
 	emit(channel, d.dnsReplaced, prometheus.GaugeValue, statistics.NumReplacedSafeSearch, name, "safe_search")
 	emit(channel, d.dnsReplaced, prometheus.GaugeValue, statistics.NumReplacedParental, name, "parental")
@@ -228,7 +279,7 @@ func newDescriptors() descriptors {
 	return descriptors{
 		up: metric("up", "Whether every enabled AdGuard Home collector succeeded.", "instance"), scrapeDuration: metric("scrape_duration_seconds", "Time spent collecting one target.", "instance"), collectorSuccess: metric("collector_success", "Whether one AdGuard Home API collector succeeded.", "instance", "collector"),
 		info: metric("info", "AdGuard Home version information.", "instance", "version"), running: metric("dns_running", "Whether the AdGuard Home DNS server is running.", "instance"), protectionEnabled: metric("protection_enabled", "Whether protection is enabled.", "instance"), protectionDisabled: metric("protection_disabled_duration_seconds", "Duration for which protection has been disabled.", "instance"), dhcpAvailable: metric("dhcp_available", "Whether built-in DHCP is available.", "instance"), startTime: metric("start_time_seconds", "AdGuard Home web API start time.", "instance"),
-		statisticsEnabled: metric("statistics_enabled", "Whether AdGuard Home statistics are enabled.", "instance"), statisticsWindow: metric("statistics_retention_seconds", "AdGuard Home statistics retention window.", "instance"), dnsQueries: metric("dns_queries", "DNS queries in AdGuard Home's current statistics window.", "instance"), dnsBlocked: metric("dns_queries_blocked", "Blocked DNS queries in AdGuard Home's current statistics window.", "instance"), dnsReplaced: metric("dns_queries_replaced", "DNS queries replaced by a protection subsystem in the current statistics window.", "instance", "reason"), processingTime: metric("dns_query_processing_duration_seconds", "Average DNS query processing time in the current statistics window.", "instance"),
+		statisticsEnabled: metric("statistics_enabled", "Whether AdGuard Home statistics are enabled.", "instance"), statisticsWindow: metric("statistics_retention_seconds", "AdGuard Home statistics retention window.", "instance"), dnsQueries: metric("dns_queries", "DNS queries in AdGuard Home's current statistics window.", "instance"), dnsBlocked: metric("dns_queries_blocked", "Blocked DNS queries in AdGuard Home's current statistics window.", "instance"), dnsQueriesTotal: metric("dns_queries_total", "DNS queries observed by the exporter since it started.", "instance"), dnsBlockedTotal: metric("dns_queries_blocked_total", "Blocked DNS queries observed by the exporter since it started.", "instance"), dnsReplaced: metric("dns_queries_replaced", "DNS queries replaced by a protection subsystem in the current statistics window.", "instance", "reason"), processingTime: metric("dns_query_processing_duration_seconds", "Average DNS query processing time in the current statistics window.", "instance"),
 		upstreamResponses: metric("upstream_responses", "Responses from an upstream in the current statistics window.", "instance", "upstream"), upstreamTime: metric("upstream_response_duration_seconds", "Average response time from an upstream in the current statistics window.", "instance", "upstream"), filteringEnabled: metric("filtering_enabled", "Whether filtering is enabled.", "instance"), filterLists: metric("filter_lists", "Configured filter lists.", "instance", "type", "enabled"), filterRules: metric("filter_list_rules", "Rules in configured filter lists.", "instance", "type", "enabled"), userRules: metric("user_rules", "Configured user rules.", "instance"), dhcpEnabled: metric("dhcp_enabled", "Whether DHCP is enabled.", "instance"), dhcpLeases: metric("dhcp_leases", "DHCP leases.", "instance", "type"),
 		topDomains: metric("top_queried_domain_queries", "Queries for a top queried domain in the current statistics window.", "instance", "domain"), topBlockedDomains: metric("top_blocked_domain_queries", "Queries for a top blocked domain in the current statistics window.", "instance", "domain"), topClients: metric("top_client_queries", "Queries from a top client in the current statistics window.", "instance", "client"),
 	}
@@ -249,6 +300,8 @@ func (d descriptors) all() []*prometheus.Desc {
 		d.statisticsWindow,
 		d.dnsQueries,
 		d.dnsBlocked,
+		d.dnsQueriesTotal,
+		d.dnsBlockedTotal,
 		d.dnsReplaced,
 		d.processingTime,
 		d.upstreamResponses,

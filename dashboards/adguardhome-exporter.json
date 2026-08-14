@@ -10,13 +10,13 @@
     },
     {
       "type": "timeseries",
-      "title": "DNS queries in current AdGuard window",
-      "targets": [{"expr": "adguardhome_dns_queries{instance=~\"$instance\"}", "legendFormat": "{{instance}}"}]
+      "title": "DNS queries / second",
+      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_total{instance=~\"$instance\"}[5m]))", "legendFormat": "{{instance}}"}]
     },
     {
       "type": "timeseries",
-      "title": "Blocked DNS queries in current AdGuard window",
-      "targets": [{"expr": "adguardhome_dns_queries_blocked{instance=~\"$instance\"}", "legendFormat": "{{instance}}"}]
+      "title": "Blocked DNS queries / second",
+      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_blocked_total{instance=~\"$instance\"}[5m]))", "legendFormat": "{{instance}}"}]
     },
     {
       "type": "timeseries",

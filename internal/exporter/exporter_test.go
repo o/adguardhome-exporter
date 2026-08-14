@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/o/adguardhome-exporter/internal/adguard"
 	"github.com/o/adguardhome-exporter/internal/config"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -61,6 +62,38 @@ func TestExporterSanitizesUpstreamLabels(t *testing.T) {
 	if value := metricValue(t, metrics, "adguardhome_upstream_responses", labels); value != 12 {
 		t.Errorf("sanitized upstream value = %v, want 12", value)
 	}
+	if value := counterValue(t, metrics, "adguardhome_dns_queries_total", nil); value != 0 {
+		t.Errorf("initial DNS query counter = %v, want 0", value)
+	}
+}
+
+func TestStatisticsTotals(t *testing.T) {
+	exporter := &Exporter{statisticsTotals: make(map[string]statisticsTotals)}
+
+	tests := []struct {
+		queries     float64
+		blocked     float64
+		wantQueries float64
+		wantBlocked float64
+	}{
+		{queries: 100, blocked: 20, wantQueries: 0, wantBlocked: 0},
+		{queries: 125, blocked: 25, wantQueries: 25, wantBlocked: 5},
+		{queries: 4, blocked: 1, wantQueries: 29, wantBlocked: 6},
+		{queries: 9, blocked: 2, wantQueries: 34, wantBlocked: 7},
+	}
+
+	for _, test := range tests {
+		totals := exporter.updateStatisticsTotals("home", adguard.Statistics{
+			NumDNSQueries:       test.queries,
+			NumBlockedFiltering: test.blocked,
+		})
+		if totals.queriesTotal != test.wantQueries {
+			t.Errorf("query total = %v, want %v", totals.queriesTotal, test.wantQueries)
+		}
+		if totals.blockedTotal != test.wantBlocked {
+			t.Errorf("blocked total = %v, want %v", totals.blockedTotal, test.wantBlocked)
+		}
+	}
 }
 
 func gatherMetrics(t *testing.T, targetURL string) []*dto.MetricFamily {
@@ -102,6 +135,24 @@ func metricValue(t *testing.T, metrics []*dto.MetricFamily, name string, expecte
 	}
 
 	t.Fatalf("metric %q with labels %v was not found", name, expectedLabels)
+	return 0
+}
+
+func counterValue(t *testing.T, metrics []*dto.MetricFamily, name string, expectedLabels map[string]string) float64 {
+	t.Helper()
+
+	for _, family := range metrics {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.Metric {
+			if hasLabels(metric, expectedLabels) {
+				return metric.GetCounter().GetValue()
+			}
+		}
+	}
+
+	t.Fatalf("counter %q with labels %v was not found", name, expectedLabels)
 	return 0
 }
 
