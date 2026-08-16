@@ -32,7 +32,7 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          if [[ ! "$TAG" =~ ^v[0-9]+.[0-9]+.[0-9]+$ ]]; then
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Release tags must use vMAJOR.MINOR.PATCH."
             exit 1
           fi
@@ -57,6 +57,11 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=AdGuard Home Exporter
+            org.opencontainers.image.description=A small Prometheus exporter for AdGuard Home.
+            org.opencontainers.image.source=https://github.com/o/adguardhome-exporter
+            org.opencontainers.image.licenses=MIT
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         id: image
         with:

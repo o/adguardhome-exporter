@@ -3,4 +3,4 @@
 /dist/
 *.local.yaml
 .env
-
+adguard_password.txt

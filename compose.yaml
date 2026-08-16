@@ -5,10 +5,11 @@ services:
     ports:
       - "9618:9618"
     environment:
-      ADGUARD_TARGET_1_NAME: home
-      ADGUARD_TARGET_1_URL: http://adguardhome:3000
-      ADGUARD_TARGET_1_USERNAME: admin
+      ADGUARD_TARGET_1_NAME: ${ADGUARD_TARGET_1_NAME:-home}
+      ADGUARD_TARGET_1_URL: ${ADGUARD_TARGET_1_URL:-http://adguardhome:3000}
+      ADGUARD_TARGET_1_USERNAME: ${ADGUARD_TARGET_1_USERNAME:-admin}
       ADGUARD_TARGET_1_PASSWORD_FILE: /run/secrets/adguard_password
+      ADGUARD_EXPORTER_POLL_INTERVAL: ${ADGUARD_EXPORTER_POLL_INTERVAL:-15s}
     secrets:
       - adguard_password
     read_only: true

@@ -19,6 +19,7 @@ import (
 const (
 	defaultListenAddress = ":9618"
 	defaultTimeout       = 5 * time.Second
+	defaultPollInterval  = 15 * time.Second
 	defaultTopLimit      = 10
 	maxTopLimit          = 100
 )
@@ -41,8 +42,9 @@ type LogConfig struct {
 }
 
 type CollectorsConfig struct {
-	TopEnabled bool `yaml:"top_enabled"`
-	TopLimit   int  `yaml:"top_limit"`
+	PollInterval time.Duration `yaml:"poll_interval"`
+	TopEnabled   bool          `yaml:"top_enabled"`
+	TopLimit     int           `yaml:"top_limit"`
 }
 
 type Target struct {
@@ -66,7 +68,7 @@ func Default() Config {
 			Level:  "info",
 			Format: "text",
 		},
-		Collectors: CollectorsConfig{TopLimit: defaultTopLimit},
+		Collectors: CollectorsConfig{PollInterval: defaultPollInterval, TopLimit: defaultTopLimit},
 	}
 }
 
@@ -152,6 +154,13 @@ func loadCommonEnvironment(config *Config) error {
 		}
 		config.Collectors.TopEnabled = enabled
 	}
+	if value := os.Getenv("ADGUARD_EXPORTER_POLL_INTERVAL"); value != "" {
+		interval, err := time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("ADGUARD_EXPORTER_POLL_INTERVAL: %w", err)
+		}
+		config.Collectors.PollInterval = interval
+	}
 
 	if value := os.Getenv("ADGUARD_EXPORTER_TOP_LIMIT"); value != "" {
 		limit, err := strconv.Atoi(value)
@@ -229,6 +238,9 @@ func validateCommonConfig(config Config) error {
 	}
 	if config.Collectors.TopLimit < 1 || config.Collectors.TopLimit > maxTopLimit {
 		return fmt.Errorf("collectors.top_limit must be between 1 and %d", maxTopLimit)
+	}
+	if config.Collectors.PollInterval <= 0 {
+		return errors.New("collectors.poll_interval must be positive")
 	}
 	if !validLogLevel(config.Log.Level) {
 		return errors.New("log.level must be debug, info, warn, or error")

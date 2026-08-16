@@ -1,0 +1,32 @@
+services:
+  adguardhome-exporter:
+    image: ghcr.io/o/adguardhome-exporter:latest
+    restart: unless-stopped
+    ports:
+      - "9618:9618"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ADGUARD_TARGET_1_NAME: ${ADGUARD_TARGET_1_NAME:-home}
+      ADGUARD_TARGET_1_URL: ${ADGUARD_TARGET_1_URL:?set ADGUARD_TARGET_1_URL}
+      ADGUARD_TARGET_1_USERNAME: ${ADGUARD_TARGET_1_USERNAME:-admin}
+      ADGUARD_TARGET_1_PASSWORD_FILE: /run/secrets/adguard_password
+      ADGUARD_EXPORTER_POLL_INTERVAL: ${ADGUARD_EXPORTER_POLL_INTERVAL:-15s}
+    secrets:
+      - adguard_password
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/adguardhome-exporter", "healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+secrets:
+  adguard_password:
+    file: ./adguard_password.txt

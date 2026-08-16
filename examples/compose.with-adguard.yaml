@@ -20,6 +20,7 @@ services:
       ADGUARD_TARGET_1_URL: http://adguardhome:3000
       ADGUARD_TARGET_1_USERNAME: admin
       ADGUARD_TARGET_1_PASSWORD_FILE: /run/secrets/adguard_password
+      ADGUARD_EXPORTER_POLL_INTERVAL: 15s
     secrets:
       - adguard_password
     read_only: true

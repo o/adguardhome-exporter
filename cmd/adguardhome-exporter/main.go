@@ -64,15 +64,13 @@ func main() {
 		os.Exit(1)
 	}
 	registry.MustRegister(exporter)
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-	mux.HandleFunc("/-/healthy", healthy)
-	mux.HandleFunc("/-/ready", healthy)
+	pollContext, cancelPolls := context.WithCancel(context.Background())
+	defer cancelPolls()
+	exporter.Start(pollContext)
 
 	server := &http.Server{
 		Addr:              cfg.Web.ListenAddress,
-		Handler:           mux,
+		Handler:           newHandler(registry),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
@@ -88,6 +86,7 @@ func main() {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 	<-shutdown
+	cancelPolls()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -100,21 +99,37 @@ func healthy(response http.ResponseWriter, _ *http.Request) {
 	response.WriteHeader(http.StatusOK)
 }
 
+func newHandler(registry *prometheus.Registry) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/-/healthy", healthy)
+	mux.HandleFunc("/-/ready", healthy)
+	return mux
+}
+
 func healthcheck() {
 	address := os.Getenv("ADGUARD_EXPORTER_HEALTHCHECK_ADDRESS")
 	if address == "" {
 		address = "http://127.0.0.1:9618/-/healthy"
 	}
 
-	client := http.Client{Timeout: 2 * time.Second}
-	response, err := client.Get(address)
-	if err != nil || response.StatusCode != http.StatusOK {
-		if response != nil {
-			response.Body.Close()
-		}
+	if err := checkHealth(address); err != nil {
 		os.Exit(1)
 	}
-	response.Body.Close()
+}
+
+func checkHealth(address string) error {
+	client := http.Client{Timeout: 2 * time.Second}
+	response, err := client.Get(address)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("health check returned %s", response.Status)
+	}
+
+	return nil
 }
 
 func newLogger(logConfig config.LogConfig) *slog.Logger {

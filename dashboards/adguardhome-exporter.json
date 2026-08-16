@@ -1,32 +1,87 @@
 {
+  "__inputs": [{"name": "DS_PROMETHEUS", "label": "Prometheus", "description": "", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus"}],
   "annotations": {"list": []},
   "editable": true,
   "panels": [
     {
-      "type": "stat",
-      "title": "AdGuard Home up",
-      "targets": [{"expr": "adguardhome_up{instance=~\"$instance\"}"}],
-      "fieldConfig": {"defaults": {"noValue": "0"}}
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 0}},
+      "gridPos": {"h": 6, "w": 3, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "count(adguardhome_up{instance=~\"$instance\"})", "refId": "A"}],
+      "title": "AdGuard Home instances",
+      "type": "stat"
     },
     {
-      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.01}, {"color": "green", "value": 1}]}, "unit": "percentunit"}},
+      "gridPos": {"h": 6, "w": 3, "x": 3, "y": 0},
+      "id": 10,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(adguardhome_protection_enabled{instance=~\"$instance\"}) / count(adguardhome_up{instance=~\"$instance\"})", "refId": "A"}],
+      "title": "Protection enabled",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "suffix: ops/s"}},
+      "gridPos": {"h": 6, "w": 5, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_total{instance=~\"$instance\"}[1m]))", "refId": "A"}],
       "title": "DNS queries / second",
-      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_total{instance=~\"$instance\"}[5m]))", "legendFormat": "{{instance}}"}]
+      "type": "stat"
     },
     {
-      "type": "timeseries",
-      "title": "Blocked DNS queries / second",
-      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_blocked_total{instance=~\"$instance\"}[5m]))", "legendFormat": "{{instance}}"}]
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "suffix: ops/s"}},
+      "gridPos": {"h": 6, "w": 5, "x": 11, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_blocked_total{instance=~\"$instance\"}[1m]))", "refId": "A"}],
+      "title": "Blocked queries / second",
+      "type": "stat"
     },
     {
-      "type": "timeseries",
-      "title": "Average processing time",
-      "targets": [{"expr": "adguardhome_dns_query_processing_duration_seconds{instance=~\"$instance\"}", "legendFormat": "{{instance}}"}]
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 1, "unit": "percentunit"}},
+      "gridPos": {"h": 6, "w": 3, "x": 16, "y": 0},
+      "id": 12,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(rate(adguardhome_dns_queries_blocked_total{instance=~\"$instance\"}[1m])) / sum(rate(adguardhome_dns_queries_total{instance=~\"$instance\"}[1m]))", "refId": "A"}],
+      "title": "Block percentage",
+      "type": "stat"
     },
     {
-      "type": "table",
-      "title": "Upstream response time",
-      "targets": [{"expr": "adguardhome_upstream_response_duration_seconds{instance=~\"$instance\"}", "format": "table", "instant": true}]
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "s"}},
+      "gridPos": {"h": 6, "w": 5, "x": 19, "y": 0},
+      "id": 7,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "avg(adguardhome_dns_query_processing_duration_seconds{instance=~\"$instance\"})", "refId": "A"}],
+      "title": "Average DNS processing time",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"custom": {"barAlignment": 0, "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0, "stacking": {"mode": "normal", "group": "A"}}, "decimals": 2, "unit": "suffix: ops/s"}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+      "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (instance) (rate(adguardhome_dns_queries_total{instance=~\"$instance\"}[1m]))", "legendFormat": "Queries · {{instance}}", "refId": "A"}, {"expr": "sum by (instance) (rate(adguardhome_dns_queries_blocked_total{instance=~\"$instance\"}[1m]))", "legendFormat": "Blocked · {{instance}}", "refId": "B"}],
+      "title": "DNS query and block rates",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"custom": {"showPoints": "never"}, "unit": "s"}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+      "id": 8,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "adguardhome_upstream_response_duration_seconds{instance=~\"$instance\"}", "legendFormat": "{{instance}} · {{upstream}}", "refId": "A"}],
+      "title": "DNS upstream latency",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 41,

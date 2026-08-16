@@ -14,30 +14,44 @@ container.
 Top domains and clients are disabled by default. They can reveal browsing and
 device information.
 
+The included Grafana dashboard shows availability, protection state, query and
+block rates, block percentage, processing time, and upstream latency.
+
 ### Running with Docker Compose
 
-Download the Compose file:
+For an existing AdGuard Home reachable by URL, download the exporter-only
+Compose file:
 
-    curl -fsSLO https://raw.githubusercontent.com/o/adguardhome-exporter/main/compose.yaml
+    curl -fsSLO https://raw.githubusercontent.com/o/adguardhome-exporter/main/examples/compose.exporter-only.yaml
 
 Create the password file next to it:
 
     printf '%s\n' 'password' > adguard_password.txt
 
-This file expects an existing Docker network called `adguard_adguard`, which
-is the network name used by the AdGuard stack on this host. Set
-`ADGUARD_NETWORK` when your network has a different name:
+Run it with the AdGuard Home URL and username:
 
-    ADGUARD_NETWORK=my-adguard-network docker compose up -d
+    ADGUARD_TARGET_1_URL=http://adguard.example:3000 \
+    ADGUARD_TARGET_1_USERNAME=admin \
+    docker compose -f compose.exporter-only.yaml up -d
 
-The target URL is `http://adguardhome:3000`. It works when the AdGuard
-container has the `adguardhome` service name on that network. Update
-`ADGUARD_TARGET_1_URL` and `ADGUARD_TARGET_1_USERNAME` when that is not
-your setup.
+For AdGuard Home running on the Docker host, use
+`http://host.docker.internal:3000` as the URL. For an existing AdGuard Home
+container on a shared Docker network, download the default Compose file:
+
+    curl -fsSLO https://raw.githubusercontent.com/o/adguardhome-exporter/main/compose.yaml
+    curl -fsSLo .env https://raw.githubusercontent.com/o/adguardhome-exporter/main/.env.example
+    printf '%s\n' 'password' > adguard_password.txt
+
+Edit `.env` when your Docker network, AdGuard URL, target name, or username is
+different. This file expects an external Docker network called
+`adguard_adguard` and an AdGuard service called `adguardhome` by default:
+
+    docker compose up -d
 
 For a new, self-contained AdGuard Home and exporter stack:
 
     curl -fsSLO https://raw.githubusercontent.com/o/adguardhome-exporter/main/examples/compose.with-adguard.yaml
+    printf '%s\n' 'password' > adguard_password.txt
     docker compose -f compose.with-adguard.yaml up -d
 
 Complete the AdGuard Home setup at `http://127.0.0.1:3000`, use
@@ -48,7 +62,7 @@ Check either setup:
 
     curl http://127.0.0.1:9618/metrics
 
-Both Compose files use Docker secrets, a read-only filesystem, no Linux
+All Compose files use Docker secrets, a read-only filesystem, no Linux
 capabilities, and a health check.
 
 ### Running with Docker
@@ -112,6 +126,7 @@ Optional exporter variables:
 
     ADGUARD_EXPORTER_LISTEN_ADDRESS=:9618
     ADGUARD_EXPORTER_TIMEOUT=5s
+    ADGUARD_EXPORTER_POLL_INTERVAL=15s
     ADGUARD_EXPORTER_TOP_ENABLED=false
     ADGUARD_EXPORTER_TOP_LIMIT=10
 
@@ -121,18 +136,21 @@ AdGuard Home returns statistics for its current retention window. Those values
 are gauges, not counters, and they may decrease when AdGuard rotates its
 statistics.
 
-The exporter also keeps query and blocked-query counters from the time it
-starts. Use these for rates in Prometheus and Grafana. They reset when the
-exporter restarts, as normal Prometheus counters do.
+The exporter keeps query and blocked-query counters from the time it starts.
+When AdGuard rotates its statistics window, the exporter resets its baseline
+without adding the lower value. This can miss one poll interval, but prevents a
+false rate spike. Use these counters for Prometheus rates.
 
 Useful metrics:
 
     adguardhome_up
+    adguardhome_collection_duration_seconds
     adguardhome_dns_queries
     adguardhome_dns_queries_blocked
     adguardhome_dns_queries_total
     adguardhome_dns_queries_blocked_total
     adguardhome_dns_query_processing_duration_seconds
+    adguardhome_upstream_responses
     adguardhome_upstream_response_duration_seconds
     adguardhome_filtering_enabled
     adguardhome_dhcp_leases
