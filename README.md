@@ -1,7 +1,7 @@
 # AdGuard Home Exporter
 
 A small Prometheus exporter for AdGuard Home. It supports multiple targets,
-collects data during the Prometheus scrape, and is shipped as a distroless Go
+polls them on a configurable interval, and is shipped as a distroless Go
 container.
 
 ### What it collects
@@ -160,7 +160,7 @@ does not read query logs, client details, or TLS configuration.
 
 ### Development
 
-Requires Go 1.26 and Docker for container testing.
+Requires the Go version declared in `go.mod` and Docker for container testing.
 
     go test ./...
     go test -race ./...
